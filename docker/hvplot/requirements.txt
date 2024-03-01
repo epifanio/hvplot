@@ -1,0 +1,17 @@
+pandas
+dask
+scipy
+bottleneck
+numbagg
+holoviews
+panel
+hvplot
+netcdf4
+nc-time-axis
+sparse
+pint
+xarray[complete]
+pydantic
+asyncer
+starlette
+itsdangerous
