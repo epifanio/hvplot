@@ -1,0 +1,54 @@
+services:
+  hvplot:
+    image: epinux/hvplot:latest
+    build:
+      context: ./docker/hvplot
+    environment:
+      BOKEH_ALLOW_WS_ORIGIN: ''
+      PORT: '7777'
+      LOG_LEVEL: 'debug'
+      BOKEH_LOG_LEVEL: 'debug'
+      PYTHONUNBUFFERED: 1
+      TSPLOT_DOWNLOAD: "/app/static/Download"
+    ports:
+      - 7777:7777
+    hostname: hvplot
+    networks:
+      - net
+      - traefik-public
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        # max_attempts: 5
+        # window: 240s
+      resources:
+        #limits:
+        #  cpus: '0.50'
+        #  memory: 2048M
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+        - traefik.http.routers.hvplot-http.rule=Host(`${UI_DOMAIN?Variable not set}`)
+        - traefik.http.routers.hvplot-http.entrypoints=http
+        - traefik.http.routers.hvplot-http.middlewares=https-redirect
+        - traefik.http.routers.hvplot-https.rule=Host(`${UI_DOMAIN?Variable not set}`)
+        - traefik.http.routers.hvplot-https.entrypoints=https
+        - traefik.http.routers.hvplot-https.tls=true
+        - traefik.http.routers.hvplot-https.tls.certresolver=le
+        - traefik.http.services.hvplot.loadbalancer.server.port=7777
+        # allow CORS
+        - "traefik.http.middlewares.testheader.headers.accesscontrolallowmethods=GET,OPTIONS,PUT"
+        - "traefik.http.middlewares.testheader.headers.accesscontrolalloworiginlist=*"
+        - "traefik.http.middlewares.testheader.headers.accesscontrolmaxage=100"
+        - "traefik.http.middlewares.testheader.headers.addvaryheader=true"
+    volumes:
+      - ./app:/app
+      - ./docker/hvplot/entrypoint.sh:/entrypoint.sh
