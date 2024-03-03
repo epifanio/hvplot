@@ -1,13 +1,14 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 LABEL maintainer="massimods@met.no"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get -y dist-upgrade && apt-get install -y apt-utils  build-essential git python3.10-venv python3.10-dev libpython3.10-dev libnetcdf-dev
+RUN apt-get update && apt-get -y dist-upgrade && apt-get install -y apt-utils  build-essential git python3.12-venv python3.12-dev libpython3.12-dev libnetcdf-dev
 
+RUN ls -la /usr/bin
 ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
+RUN python3.12 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Install dependencies:
