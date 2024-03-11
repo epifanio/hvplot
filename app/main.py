@@ -1,32 +1,21 @@
 import time
-import pandas as pd
+import traceback
+import functools
 import hvplot.xarray
 import xarray as xr
 import panel as pn
 import numpy as np
-import param
-import functools
-
 import holoviews as hv
-
-from utility import ModelURL, pandas_frequency_offsets, generate_download_string, dict_to_html, dict_to_html_ul
-import traceback
+from utility import ModelURL, pandas_frequency_offsets, generate_download_string, dict_to_html_ul
 from pydantic import ValidationError
 from starlette.templating import Jinja2Templates
 
 
-from bokeh.models import Select, Button, Div, Slider
-from bokeh.layouts import layout, column, row, Spacer
+from bokeh.models import Button, Div
+from bokeh.layouts import column, Spacer
 
-
-# from bokeh.models.widgets import (
-#     DataTable,
-#     TableColumn,
-# )
-# from bokeh.models import ColumnDataSource
 
 pn.param.ParamMethod.loading_indicator = True
-
 
 # try:
 #     # phase = int(pn.state.session_args.get('phase')[0])
@@ -36,6 +25,8 @@ pn.param.ParamMethod.loading_indicator = True
 #     nc_url = 'https://thredds.met.no/thredds/dodsC/alertness/YOPP_supersite/obs/utqiagvik/utqiagvik_obs_timeSeriesProfile_20180701_20180930.nc'
 
 
+nc_url = None
+valid_url = False
 
 try:
     nc_url = str(pn.state.session_args.get('url')[0].decode("utf8"))
@@ -102,7 +93,7 @@ except OSError as e:
 # then the frequency selector should be added to the sidebar
 # if time is not detected as a coordinate then the frequency selector should not be added to the sidebar
 
-time_coord = [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')]
+var_coord = [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')]
 
 # if time is detected as a coordinate then the frequency selector should be added to the sidebar
 # but I also need to check if the time coordinate is a dimension for the selectred variable
@@ -117,7 +108,7 @@ time_coord = [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')
 # is_time_indexed = 'time' in ds['variable'].indexes
 # print("variable {} is indexed by time: ", is_time_indexed)
 
-if len(time_coord) != 0:
+if len(var_coord) != 0:
     frequency_selector = pn.widgets.Select(options=[
         "--",
         "Hourly",
@@ -130,27 +121,56 @@ if len(time_coord) != 0:
 else:
     frequency_selector = None
 
-if len(time_coord) == 0:
-    time_coord = [i for i in ds.coords]
+if len(var_coord) == 0:
+    var_coord = list(ds.coords) # [i for i in ds.coords]
+
+# variable that have dims and coords matching
+plottable_vars = [i for i in ds if list(ds[i].dims) == list(ds.coords)] # [j for j in ds.coords]]
 
 # build a dictionary of variables and their long names
+
 mapping_var_names = {}
-for i in ds:
+for i in plottable_vars:
     if int(len(list(ds[i].coords)) != 0):
         try:
             title = f"{ds[i].attrs['long_name']} [{i}]"
         except KeyError:
             title = f"{i}"
         mapping_var_names[i] = title
-        
+          
 # add a select widget for variables, uses long names
 variables_selector = pn.widgets.Select(options=list(mapping_var_names.values()), name='Data Variable')
 
 # main plotting function
 def plot(var, title=None, plot_type='line'):
-    time_coord = [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')]
-    if len(time_coord) == 0:
-        time_coord = [i for i in ds.coords]
+    if 'featureType' in ds.attrs:
+        if ds.attrs['featureType'] == 'timeSeries':
+            print("timeSeries")
+            var_coord = [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')]
+            frequency_selector.visible = True
+            feature_type = ds.attrs['featureType']
+        if ds.attrs['featureType'] == 'timeSeriesProfile':
+            print("timeSeriesProfile")
+            var_coord = [i for i in ds.coords if ds.coords.dtypes[i] != np.dtype('<M8[ns]')]
+            frequency_selector.visible = False
+            feature_type = ds.attrs['featureType']
+        if ds.attrs['featureType'] == 'profile':
+            print("profile")
+            var_coord = [i for i in ds.coords]
+            feature_type = ds.attrs['featureType']
+    else:
+        feature_type = None
+    #var_coord = [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')]
+    #if var_coord[0] in ds[var].indexes:
+    #    frequency_selector.visible = True
+    #    #export_resampling_option.visible = False
+    #else:
+    #    frequency_selector.visible = False
+        #export_resampling_option.visible = False
+    #    print(f"The selected variable {var} is not indexed by time. The frequency selector will not be visible.")
+    #if len(var_coord) == 0:
+    #    # var_coord = [i for i in ds.coords]
+    #    var_coord = [i for i in ds.coords if ds.coords.dtypes[i] != np.dtype('<M8[ns]')]
     if not title:
         try:
             title = f"{ds[var].attrs['long_name']}"
@@ -158,28 +178,35 @@ def plot(var, title=None, plot_type='line'):
             title = f"{var}"
     else:
         title=title
-    if time_coord[0] in ds[var].coords:
+        
+    if feature_type and feature_type == "timeSeriesProfile":
+        axis_arguments = {'y': var_coord[0], 'grid':True, 'title': title, 'widget_location': 'bottom', 'responsive': True}
+    else:
+        axis_arguments = {'y': ds[var], 'grid':True, 'title': title, 'widget_location': 'bottom', 'responsive': True}
+    print('axis_arguments: ', axis_arguments)
+                
+    if var_coord[0] in ds[var].coords:
         if frequency_selector is not None and frequency_selector.value != "--":
-            print(f"user request to plot resampled dataset - using time dimension: {time_coord[0]}")
-            print(f"available dimensions are: {time_coord}")
-            arguments = {time_coord[0]: pandas_frequency_offsets[frequency_selector.value]}
+            print(f"user request to plot resampled dataset - using time dimension: {var_coord[0]}")
+            print(f"available dimensions are: {var_coord}")
+            arguments = {var_coord[0]: pandas_frequency_offsets[frequency_selector.value]}
             if plot_type == 'line':
-                plot_widget =  ds[var].resample(**arguments).mean().hvplot.line(x=time_coord[0], grid=True, title=title, widget_location='bottom', responsive=True)
+                plot_widget =  ds[var].resample(**arguments).mean().hvplot.line(**axis_arguments)
             else:
-                plot_widget =  ds[var].resample(**arguments).mean().hvplot.scatter(x=time_coord[0], grid=True, title=title, widget_location='bottom', responsive=True)   
+                plot_widget =  ds[var].resample(**arguments).mean().hvplot.scatter(**axis_arguments)   
         else:
             if plot_type == 'line':
-                plot_widget =  ds[var].hvplot.line(x=time_coord[0], grid=True, title=title, widget_location='bottom', responsive=True)
+                plot_widget =  ds[var].hvplot.line(**axis_arguments)
             else:
-                plot_widget =  ds[var].hvplot.scatter(x=time_coord[0], grid=True, title=title, widget_location='bottom', responsive=True)
-        # scatter_plot_widget = ds[var].hvplot.scatter(x=time_coord[0], grid=True, title=title, widget_location='bottom', responsive=True)
+                plot_widget =  ds[var].hvplot.scatter(**axis_arguments)
+        # scatter_plot_widget = ds[var].hvplot.scatter(x=var_coord[0], grid=True, title=title, widget_location='bottom', responsive=True)
         #plot_widget = hv.Overlay(line_plot_widget, scatter_plot_widget)
         return plot_widget
     else:
         if plot_type == 'line':
-            plot_widget =  ds[var].hvplot.line(x=list(ds[var].coords)[0], grid=True, title=title, widget_location='bottom', responsive=True)
+            plot_widget =  ds[var].hvplot.line(**axis_arguments)
         else:
-            plot_widget =  ds[var].hvplot.scatter(x=list(ds[var].coords)[0], grid=True, title=title, widget_location='bottom', responsive=True)
+            plot_widget =  ds[var].hvplot.scatter(**axis_arguments)
         # scatter_plot_widget = ds[var].hvplot.scatter(x=list(ds[var].coords)[0], grid=True, title=title, widget_location='bottom', responsive=True)
         #plot_widget = hv.Overlay(line_plot_widget, scatter_plot_widget)
         return plot_widget
@@ -205,6 +232,10 @@ if frequency_selector is not None:
  
 def show_hide_export_widget(event):
     print(downloader.visible)
+    result = [key for key, value in mapping_var_names.items() if value == variables_selector.value]
+    if [i for i in ds.coords if ds.coords.dtypes[i] == np.dtype('<M8[ns]')][0] not in ds[result].indexes:
+        print("this shoiuld remove the resampling data selector for raw / resampled")
+        export_resampling.visible = False
     if downloader.visible:
         downloader.visible = False
     else:
@@ -268,6 +299,7 @@ def compress_selection(json_data, output_log_widget):
     output_log_widget.text = str(
                 f'<a href="{json_data}">Download</a>'
             )
+    print(json_data)
     
     
 def build_metadata_widget():
@@ -322,7 +354,7 @@ def build_download_widget():
                                               options=['Raw', 'Resampled'])    
     event_log = Div(text=f"""<br><br> some_log """)
     try:
-        time_dim = time_coord[0]
+        time_dim = var_coord[0]
         date_range_slider = pn.widgets.DateRangeSlider(
             name='Date Range',
             start=ds.coords[time_dim].values.min(), end=ds.coords[time_dim].values.max(),
@@ -341,6 +373,7 @@ def build_download_widget():
         width=120,
     )  
     export_button.on_click(show_hide_export_widget)
+    
     
     export_options_button = Button(
         label="Download",
@@ -391,5 +424,6 @@ buttons = pn.Column(export_button, metadata_button)
 plot_widget = pn.Column(pn.Row(variables_selector, frequency_selector, buttons), plot(selected_var, title=variables_selector.value))
 
 main_app = pn.Row(plot_widget, Spacer(width=10), downloader, metadata_layout).servable()
+
 
 
