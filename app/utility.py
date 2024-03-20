@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 import os
 import json
+import requests
 
 
 pandas_frequency_offsets = {
@@ -84,3 +85,12 @@ def dict_to_html_ul(dd, level=0):
         text += '<li><b>%s</b>: %s</li>' % (k, dict_to_html_ul(v, level+1) if isinstance(v, dict) else (json.dumps(v) if isinstance(v, list) else v))
     text += '</ul>'
     return text
+
+def get_download_link(data):
+    processing_endpoint = os.environ["PROCESSING_ENDPOINT"]
+    s: requests.Session = requests.Session()
+    url: str = f"{processing_endpoint}/process_data"
+    r = s.post(url, data=data)
+    download_endpoint = f"{processing_endpoint}/results"
+    download_url = f"{download_endpoint}/{r.json()['download_token']}"
+    return download_url
