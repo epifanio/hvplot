@@ -4,12 +4,13 @@ services:
     build:
       context: ./docker/hvplot
     environment:
-      BOKEH_ALLOW_WS_ORIGIN: 'localhost:7778,0.0.0.0:7778'
+      BOKEH_ALLOW_WS_ORIGIN: 'localhost:7778,0.0.0.0:7778,192.168.176.1:7778'
       PORT: '7777'
       LOG_LEVEL: 'debug'
       BOKEH_LOG_LEVEL: 'debug'
       PYTHONUNBUFFERED: 1
       TSPLOT_DOWNLOAD: "/app/static/Download"
+      PROCESSING_ENDPOINT: 'http://192.168.176.1:8004'
     ports:
       - 7778:7777
     hostname: hvplot
