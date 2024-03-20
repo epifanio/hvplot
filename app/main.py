@@ -125,10 +125,10 @@ if len(var_coord) == 0:
     var_coord = list(ds.coords) # [i for i in ds.coords]
 
 # variable that have dims and coords matching
-plottable_vars = [i for i in ds if list(ds[i].dims) == list(ds.coords)] # [j for j in ds.coords]]
-
+# plottable_vars = [i for i in ds if list(ds[i].dims) == list(ds.coords)] # [j for j in ds.coords]]
+plottable_vars = [i for i in ds if (list(ds[i].dims) == list(ds.coords) or list(ds[i].dims) == list(ds.coords)[::-1])] 
 # build a dictionary of variables and their long names
-
+print("plottable_vars:" )
 mapping_var_names = {}
 for i in plottable_vars:
     if int(len(list(ds[i].coords)) != 0):
@@ -184,6 +184,7 @@ def plot(var, title=None, plot_type='line'):
     else:
         axis_arguments = {'y': ds[var], 'grid':True, 'title': title, 'widget_location': 'bottom', 'responsive': True}
     print('axis_arguments: ', axis_arguments)
+    print('selected variable: ', var)
                 
     if var_coord[0] in ds[var].coords:
         if frequency_selector is not None and frequency_selector.value != "--":
@@ -424,6 +425,3 @@ buttons = pn.Column(export_button, metadata_button)
 plot_widget = pn.Column(pn.Row(variables_selector, frequency_selector, buttons), plot(selected_var, title=variables_selector.value))
 
 main_app = pn.Row(plot_widget, Spacer(width=10), downloader, metadata_layout).servable()
-
-
-
