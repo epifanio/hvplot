@@ -6,10 +6,10 @@ import xarray as xr
 import panel as pn
 import numpy as np
 import holoviews as hv
-from utility import ModelURL, pandas_frequency_offsets, generate_download_string, dict_to_html_ul
+from utility import ModelURL, pandas_frequency_offsets, get_download_link, dict_to_html_ul
 from pydantic import ValidationError
 from starlette.templating import Jinja2Templates
-
+import json
 
 from bokeh.models import Button, Div
 from bokeh.layouts import column, Spacer
@@ -63,9 +63,11 @@ print("++++++++++++++++++++++++ +++++++ ++++++++++++++++++++++++++++++++++++")
 
 try:
     ds = xr.open_dataset(str(nc_url).strip())
+    decoded_time=True
 except ValueError as e:
     print(e)
     ds = xr.open_dataset(str(nc_url).strip(), decode_times=False)
+    decoded_time=False
 except OSError as e:
     raw_data = Div(text=f"""<b>ValueError</b><br><br> Can't load dataset from {nc_url} """)
     newhtml = templates.get_template("error.html").render(
@@ -255,52 +257,87 @@ def show_hide_metadata_widget(event):
 def export_selection(event):
     """docstring"""
     # print(box.values)
-    # start = ds.index.searchsorted(date_range_slider.value[0])
-    # end = ds.index.searchsorted(date_range_slider.value[1])
-    # event_log.text = f"{str(wbx.value)} <br> {str(date_range_slider.value)}"
+    # start = ds.index.searchsorted(date_time_range_slider.value[0])
+    # end = ds.index.searchsorted(date_time_range_slider.value[1])
+    # event_log.text = f"{str(wbx.value)} <br> {str(date_time_range_slider.value)}"
     with pn.param.set_values(main_app, loading=True):
         export_format = select_output_format.value
         if export_resampling.value == 'Raw':
-            resampler = 'Raw Data'
+            resampler = False
+            resampler_frequency = 'raw '
             #print(export_resampling)
             #print(export_resampling.value)
         else:
             if frequency_selector is not None and frequency_selector.value != "--":
-                resampler = frequency_selector.value
+                resampler = True
+                resampler_frequency = frequency_selector.value
                 #print(export_resampling)
                 #print(export_resampling.value)
             else:
-                resampler = 'Raw Data'
+                resampler = False
+                resampler_frequency = 'raw'
         if not frequency_selector:
-            time_range = "Time not decoded"
+            time_range = []
         else:
-            time_range = str(date_range_slider.value)
+            time_range = date_time_range_slider.value
             selected_variables = [i.name for i in wbx if i.value == True]
         # event_log.text = f"{str(selected_variables)} <br> {time_range} <br> {export_format} <br> {resampler}"
-        some_text = generate_download_string()
-        print(some_text)
+        
+
+        data = {
+            "url": "https://thredds.met.no/thredds/dodsC/alertness/YOPP_supersite/obs/utqiagvik/utqiagvik_obs_timeSeriesProfileSonde_20180201_20180331.nc",
+            "variables": [
+                "ta",
+                "hur",
+                "wdir_refmt"
+                ],
+            "decoded_time": decoded_time,
+            "time_range": [
+                "2018-07-01T00:00:00.000000000",
+                "2018-09-30T23:59:00.000000000"
+                ],
+            "is_resampled": resampler,
+            "resampling_frequency": "raw",
+            "output_format": "nc"
+            }
+        download_link = get_download_link(data)
+        
+        print(download_link)
+        
+        
+        time_range = [str(i) for i in date_time_range_slider.value]
         export_dataspec = {
-            'nc_url': nc_url,
-            'selected_variables': selected_variables,
-            'time_range': time_range,
-            'export_format': export_format,
-            'resampler': resampler,     
+            "url": nc_url,
+            "variables": selected_variables,
+            "decoded_time": decoded_time,
+            "time_range": time_range,
+            "is_resampled": resampler,
+            "resampling_frequency": resampler_frequency,
+            "output_format": export_format,
         }
+        json_object = json.dumps(export_dataspec)
+        print(json_object)
+        download_link = get_download_link(json_object)
         # event_log.text = f"{str(export_dataspec)}"
         event_log.text = str(
             f'<marquee behavior="scroll" direction="left"><b>. . .  processing . . .</b></marquee>'
         )
         pn.state.curdoc.add_next_tick_callback(
             functools.partial(
-                compress_selection, json_data=export_dataspec, output_log_widget=event_log))
+                compress_selection, download_link=download_link, output_log_widget=event_log))
+        
+        # print(json.dump(export_dataspec))
+        #print(export_dataspec)
+        #json_object = json.dumps(export_dataspec, indent = 4)
+        #print(json_object)
         # slice the ds by selecting the variables fro the checkbox and slicing along the time dimension from the timerange slider (if available)
     
-def compress_selection(json_data, output_log_widget):
-    time.sleep(10)
+def compress_selection(download_link, output_log_widget):
+    time.sleep(2)
     output_log_widget.text = str(
-                f'<a href="{json_data}">Download</a>'
+                f'<a href="{download_link}">Download</a>'
             )
-    print(json_data)
+    print(download_link)
     
     
 def build_metadata_widget():
@@ -353,17 +390,15 @@ def build_metadata_widget():
 def build_download_widget():
     export_resampling_option = pn.widgets.RadioButtonGroup(name='Resamplig', 
                                               options=['Raw', 'Resampled'])    
-    event_log = Div(text=f"""<br><br> some_log """)
+    event_log = Div(text=f"""<br><br> some_log <br><br>""")
     try:
         time_dim = var_coord[0]
-        date_range_slider = pn.widgets.DateRangeSlider(
+        date_time_range_slider = pn.widgets.DatetimeRangeSlider(
             name='Date Range',
             start=ds.coords[time_dim].values.min(), end=ds.coords[time_dim].values.max(),
-            value=(ds.coords[time_dim].values.min(), ds.coords[time_dim].values.max()),
-            step=1
-        )
+            value=(ds.coords[time_dim].values.min(), ds.coords[time_dim].values.max())        )
     except:
-        date_range_slider = Div(text=f"""<br><br> Time Dimension not available """)
+        date_time_range_slider = Div(text=f"""<br><br> Time Dimension not available """)
     
     checkbox_group = pn.FlexBox(*[pn.widgets.Checkbox(name=str(i)) for i in mapping_var_names.keys()])
     select_output_format = pn.widgets.Select(name='Export Format', options=['NetCDF', 'CSV', 'Parquet'])
@@ -386,13 +421,13 @@ def build_download_widget():
     if not frequency_selector: 
         export_resampling_option.visible = False
     
-    return export_button, checkbox_group, date_range_slider, export_options_button, event_log, select_output_format, export_resampling_option
+    return export_button, checkbox_group, date_time_range_slider, export_options_button, event_log, select_output_format, export_resampling_option
 
 
 
 
 # Export Widgets
-export_button, wbx, date_range_slider, export_options_button, event_log, select_output_format, export_resampling = build_download_widget()
+export_button, wbx, date_time_range_slider, export_options_button, event_log, select_output_format, export_resampling = build_download_widget()
 download_header = Div(text='<font size = "2" color = "darkslategray" ><b>Data Export<b></font> <br> Variable Selection')
 # download_header.visible = False
 
@@ -401,14 +436,14 @@ download_header = Div(text='<font size = "2" color = "darkslategray" ><b>Data Ex
 metadata_layout, metadata_button = build_metadata_widget()
 
 
-# downloader = pn.Column(download_header, wbx, date_range_slider, select_output_format, export_resampling, export_options_button, event_log, width=400, sizing_mode='fixed')
+# downloader = pn.Column(download_header, wbx, date_time_range_slider, select_output_format, export_resampling, export_options_button, event_log, width=400, sizing_mode='fixed')
 
 
 
 downloader = pn.Row(Spacer(width=10), pn.Column(Spacer(height=120),
                                                 download_header, 
                                                 wbx, 
-                                                date_range_slider, 
+                                                date_time_range_slider, 
                                                 select_output_format, 
                                                 export_resampling, 
                                                 export_options_button, 
