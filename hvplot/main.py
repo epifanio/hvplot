@@ -300,14 +300,14 @@ def export_selection(event):
             "resampling_frequency": "raw",
             "output_format": "nc"
             }
-        download_link = get_download_link(data)
+        # download_link = get_download_link(data)
         
-        print(download_link)
+        # print(download_link)
         
         
         time_range = [str(i) for i in date_time_range_slider.value]
         export_dataspec = {
-            "url": nc_url,
+            "url": str(nc_url),
             "variables": selected_variables,
             "decoded_time": decoded_time,
             "time_range": time_range,

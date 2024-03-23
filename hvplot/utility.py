@@ -91,6 +91,7 @@ def get_download_link(data):
     s: requests.Session = requests.Session()
     url: str = f"{processing_endpoint}/process_data"
     r = s.post(url, data=data)
+    print(url, data)
     download_endpoint = f"{processing_endpoint}/results"
     download_url = f"{download_endpoint}/{r.json()['download_token']}"
     return download_url
